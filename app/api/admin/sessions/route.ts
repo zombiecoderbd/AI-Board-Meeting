@@ -56,17 +56,28 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    
-    if (!id) {
+
+    const { updateSessionStatus } = await import('@/server/db/database');
+
+    if (id) {
+      updateSessionStatus(id, 'archived');
+      return NextResponse.json({ success: true });
+    }
+
+    let body: any = null;
+    try {
+      body = await request.json();
+    } catch {
+      body = null;
+    }
+
+    const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];
+    if (ids.length === 0) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 });
     }
-    
-    // Note: We're not actually deleting from DB to preserve history
-    // Just marking as archived
-    const { updateSessionStatus } = await import('@/server/db/database');
-    updateSessionStatus(id, 'archived');
-    
-    return NextResponse.json({ success: true });
+
+    ids.forEach((sessionId) => updateSessionStatus(sessionId, 'archived'));
+    return NextResponse.json({ success: true, archived: ids.length });
   } catch (error) {
     console.error('Error deleting session:', error);
     return NextResponse.json({ error: 'Failed to delete session' }, { status: 500 });

@@ -41,12 +41,28 @@ export const createWebSocketServer = () => {
   });
   
   initializeWebSocket(wss);
-  
-  server.listen(PORT, () => {
-    console.log(`WebSocket server running on ws://localhost:${PORT}`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
-    console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
+
+  const tryListen = (port: number, attempt: number) => {
+    server.listen(port, () => {
+      console.log(`WebSocket server running on ws://localhost:${port}`);
+      console.log(`Health check: http://localhost:${port}/health`);
+      console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
+    });
+  };
+
+  server.on('error', (error: any) => {
+    if (error?.code === 'EADDRINUSE' && process.env.NODE_ENV !== 'production') {
+      const currentPort = typeof error?.port === 'number' ? error.port : PORT;
+      const nextPort = currentPort + 1;
+      console.error(`WebSocket port ${currentPort} is already in use. Retrying on ${nextPort}...`);
+      tryListen(nextPort, 1);
+      return;
+    }
+
+    console.error('WebSocket HTTP server error:', error);
   });
+
+  tryListen(PORT, 0);
   
   return { server, wss };
 };

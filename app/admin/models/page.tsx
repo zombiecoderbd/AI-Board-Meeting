@@ -1,20 +1,18 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { 
   ArrowLeft, 
-  Cpu, 
-  Sparkles,
   Check,
   RefreshCw,
-  Server
+  Search
 } from "lucide-react"
 
 interface Model {
@@ -39,10 +37,25 @@ export default function ModelConfig() {
   const router = useRouter()
   const [ollamaData, setOllamaData] = useState<ProviderData | null>(null)
   const [geminiData, setGeminiData] = useState<ProviderData | null>(null)
-  const [selectedProvider, setSelectedProvider] = useState<string>('ollama')
+  const [selectedProvider, setSelectedProvider] = useState<'ollama' | 'gemini'>('ollama')
   const [selectedModel, setSelectedModel] = useState<string>('')
+  const [search, setSearch] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+
+  const combinedModels = useMemo(() => {
+    const ollamaModels = (ollamaData?.models || []).map(m => ({
+      ...m,
+      provider: 'ollama' as const,
+      providerLabel: 'Ollama',
+    }))
+    const geminiModels = (geminiData?.models || []).map(m => ({
+      ...m,
+      provider: 'gemini' as const,
+      providerLabel: 'Google',
+    }))
+    return [...ollamaModels, ...geminiModels]
+  }, [ollamaData, geminiData])
 
   useEffect(() => {
     fetchModels()
@@ -56,7 +69,7 @@ export default function ModelConfig() {
         const data = await res.json()
         if (data.setting?.value) {
           const config = JSON.parse(data.setting.value)
-          setSelectedProvider(config.provider || 'ollama')
+          setSelectedProvider((config.provider || 'ollama') as 'ollama' | 'gemini')
           setSelectedModel(config.model || '')
         }
       }
@@ -73,10 +86,14 @@ export default function ModelConfig() {
         const data = await res.json()
         setOllamaData(data.ollama)
         setGeminiData(data.gemini)
-        
-        // Set default selection
-        if (data.ollama?.models?.length > 0) {
-          setSelectedModel(data.ollama.models[0].id)
+
+        if (!selectedModel) {
+          const fallback =
+            data.ollama?.models?.[0]?.id ||
+            data.gemini?.models?.[0]?.id ||
+            ''
+          setSelectedModel(fallback)
+          setSelectedProvider(data.ollama?.models?.[0]?.id ? 'ollama' : 'gemini')
         }
       }
     } catch (error) {
@@ -95,9 +112,6 @@ export default function ModelConfig() {
         model: selectedModel,
         ...(selectedProvider === 'ollama' && { 
           baseUrl: ollamaData?.baseUrl || 'http://localhost:11434' 
-        }),
-        ...(selectedProvider === 'gemini' && { 
-          apiKey: geminiData?.apiKey === 'configured' ? process.env.GEMINI_API_KEY : '' 
         })
       }
       
@@ -120,9 +134,19 @@ export default function ModelConfig() {
     }
   }
 
+  const filtered = combinedModels.filter(m => {
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return (
+      m.id.toLowerCase().includes(q) ||
+      m.name.toLowerCase().includes(q) ||
+      m.providerLabel.toLowerCase().includes(q)
+    )
+  })
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-24">
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
           <p>Loading model configurations...</p>
@@ -132,8 +156,7 @@ export default function ModelConfig() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -142,155 +165,89 @@ export default function ModelConfig() {
               Back
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Model Configuration</h1>
-              <p className="text-slate-600">Select AI provider and default model</p>
+              <h1 className="text-2xl font-bold">Model Configuration</h1>
+              <p className="text-muted-foreground">Select AI provider and default model</p>
             </div>
           </div>
           <Button onClick={fetchModels} variant="outline">
             <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
+            Sync Models
           </Button>
         </div>
 
-        {/* Provider Selection */}
-        <Tabs 
-          value={selectedProvider} 
-          onValueChange={setSelectedProvider}
-          className="space-y-4"
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="ollama" className="flex items-center gap-2">
-              <Server className="w-4 h-4" />
-              Ollama (Local)
-              {!ollamaData?.available && (
-                <Badge variant="destructive" className="ml-2 text-xs">Offline</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="gemini" className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              Google Gemini
-              {geminiData?.connection?.connected ? (
-                <Badge variant="default" className="ml-2 text-xs bg-green-500">
-                  Connected {geminiData.connection.latency ? `(${geminiData.connection.latency}ms)` : ''}
-                </Badge>
-              ) : !geminiData?.available ? (
-                <Badge variant="destructive" className="ml-2 text-xs">No API Key</Badge>
+        <Card>
+          <CardHeader>
+            <CardTitle>Available Models</CardTitle>
+            <CardDescription>Select one model as default (provider is saved automatically)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search models..."
+                className="flex-1"
+              />
+              <Badge variant="secondary">Ollama: {ollamaData?.models?.length || 0}</Badge>
+              <Badge variant="secondary">Google: {geminiData?.models?.length || 0}</Badge>
+            </div>
+
+            <RadioGroup
+              value={`${selectedProvider}:${selectedModel}`}
+              onValueChange={(v) => {
+                const [provider, model] = v.split(':')
+                if (!provider || !model) return
+                setSelectedProvider(provider as 'ollama' | 'gemini')
+                setSelectedModel(model)
+              }}
+              className="space-y-3"
+            >
+              {filtered.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No models found</div>
               ) : (
-                <Badge variant="destructive" className="ml-2 text-xs">
-                  Disconnected {geminiData?.connection?.error ? `(${geminiData.connection.error})` : ''}
-                </Badge>
+                filtered.map((m) => (
+                  <div
+                    key={`${m.provider}:${m.id}`}
+                    className={`flex items-center space-x-3 p-4 rounded-lg border transition-colors cursor-pointer ${
+                      selectedProvider === m.provider && selectedModel === m.id
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:bg-accent/40'
+                    }`}
+                    onClick={() => {
+                      setSelectedProvider(m.provider)
+                      setSelectedModel(m.id)
+                    }}
+                  >
+                    <RadioGroupItem value={`${m.provider}:${m.id}`} id={`${m.provider}:${m.id}`} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor={`${m.provider}:${m.id}`} className="font-medium cursor-pointer">
+                          {m.name}
+                        </Label>
+                        <Badge variant="outline">{m.providerLabel}</Badge>
+                        {m.provider === 'gemini' && (
+                          geminiData?.connection?.connected ? (
+                            <Badge className="bg-green-500" variant="default">Connected</Badge>
+                          ) : (
+                            <Badge variant="destructive">Disconnected</Badge>
+                          )
+                        )}
+                        {m.provider === 'ollama' && !ollamaData?.available && (
+                          <Badge variant="destructive">Offline</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{m.description}</p>
+                    </div>
+                    {selectedProvider === m.provider && selectedModel === m.id && (
+                      <Check className="w-5 h-5 text-primary" />
+                    )}
+                  </div>
+                ))
               )}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="ollama" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Cpu className="w-5 h-5" />
-                  Ollama Models
-                </CardTitle>
-                <CardDescription>
-                  Locally hosted AI models. Make sure Ollama is running on {ollamaData?.baseUrl || 'localhost:11434'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!ollamaData?.available ? (
-                  <div className="text-center py-8 text-slate-500">
-                    <Server className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>Ollama is not available. Please start Ollama server.</p>
-                    <p className="text-sm mt-2">
-                      Run: <code className="bg-slate-200 px-2 py-1 rounded">ollama serve</code>
-                    </p>
-                  </div>
-                ) : (
-                  <RadioGroup 
-                    value={selectedModel} 
-                    onValueChange={setSelectedModel}
-                    className="space-y-3"
-                  >
-                    {ollamaData.models.map((model) => (
-                      <div 
-                        key={model.id}
-                        className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-colors cursor-pointer ${
-                          selectedModel === model.id 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                        onClick={() => setSelectedModel(model.id)}
-                      >
-                        <RadioGroupItem value={model.id} id={model.id} />
-                        <div className="flex-1">
-                          <Label htmlFor={model.id} className="font-medium cursor-pointer">
-                            {model.name}
-                          </Label>
-                          <p className="text-sm text-slate-500">{model.description}</p>
-                        </div>
-                        {selectedModel === model.id && (
-                          <Check className="w-5 h-5 text-blue-500" />
-                        )}
-                      </div>
-                    ))}
-                  </RadioGroup>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="gemini" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" />
-                  Google Gemini Models
-                </CardTitle>
-                <CardDescription>
-                  Cloud-based AI models from Google. Requires API key in .env file.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!geminiData?.available ? (
-                  <div className="text-center py-8 text-slate-500">
-                    <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>Gemini API key not configured.</p>
-                    <p className="text-sm mt-2">
-                      Add <code className="bg-slate-200 px-2 py-1 rounded">GEMINI_API_KEY</code> to your .env file
-                    </p>
-                  </div>
-                ) : (
-                  <RadioGroup 
-                    value={selectedModel} 
-                    onValueChange={setSelectedModel}
-                    className="space-y-3"
-                  >
-                    {geminiData.models.map((model) => (
-                      <div 
-                        key={model.id}
-                        className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-colors cursor-pointer ${
-                          selectedModel === model.id 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                        onClick={() => setSelectedModel(model.id)}
-                      >
-                        <RadioGroupItem value={model.id} id={model.id} />
-                        <div className="flex-1">
-                          <Label htmlFor={model.id} className="font-medium cursor-pointer">
-                            {model.name}
-                          </Label>
-                          <p className="text-sm text-slate-500">{model.description}</p>
-                        </div>
-                        {selectedModel === model.id && (
-                          <Check className="w-5 h-5 text-blue-500" />
-                        )}
-                      </div>
-                    ))}
-                  </RadioGroup>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+            </RadioGroup>
+          </CardContent>
+        </Card>
 
         {/* Save Button */}
         <Card>
@@ -298,7 +255,7 @@ export default function ModelConfig() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-medium">Selected Configuration</h3>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-muted-foreground">
                   Provider: <Badge variant="outline">{selectedProvider}</Badge>
                   {' '}Model: <Badge variant="outline">{selectedModel || 'None'}</Badge>
                 </p>
@@ -325,10 +282,10 @@ export default function ModelConfig() {
         </Card>
 
         {/* Info Card */}
-        <Card className="bg-blue-50 border-blue-200">
+        <Card className="bg-muted/40">
           <CardContent className="p-4">
-            <h4 className="font-medium text-blue-900 mb-2">How it works</h4>
-            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+            <h4 className="font-medium mb-2">How it works</h4>
+            <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
               <li>Each meeting session can have its own model configuration</li>
               <li>Default model is used when creating new sessions</li>
               <li>Ollama models run locally on your computer</li>
@@ -336,7 +293,6 @@ export default function ModelConfig() {
             </ul>
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }

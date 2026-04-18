@@ -37,6 +37,7 @@ export const generateStreamingResponseWithConfig = async (
   callbacks: StreamingCallback
 ): Promise<void> => {
   try {
+    console.log(`🤖 Creating model: ${modelConfig.provider}:${modelConfig.model}`);
     const model = createModel(modelConfig);
     
     const messages = [
@@ -49,6 +50,7 @@ export const generateStreamingResponseWithConfig = async (
       new HumanMessage(userMessage),
     ];
     
+    console.log(`📤 Sending request to ${modelConfig.provider}...`);
     const stream = await model.stream(messages);
     
     let fullResponse = '';
@@ -59,8 +61,20 @@ export const generateStreamingResponseWithConfig = async (
       callbacks.onChunk(content);
     }
     
+    console.log(`✅ Response complete (${fullResponse.length} chars)`);
     callbacks.onComplete(fullResponse);
-  } catch (error) {
+  } catch (error: any) {
+    const status = error?.status || error?.response?.status || error?.cause?.status;
+    const msg = error?.message || String(error);
+
+    if (modelConfig.provider === 'gemini' && status === 429) {
+      console.error(`❌ ${modelConfig.provider} Error:`, msg);
+      callbacks.onError(new Error(`Gemini rate limit exceeded (429). Try fewer agents or retry in a few seconds.`));
+      return;
+    }
+
+    console.error(`❌ ${modelConfig.provider} Error:`, msg);
+    console.error('Full error:', error);
     callbacks.onError(error as Error);
   }
 };

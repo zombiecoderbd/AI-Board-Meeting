@@ -59,16 +59,40 @@ export default function MultiAgentAI() {
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [sessionId, setSessionId] = useState<string>("")
+  const [askMode, setAskMode] = useState<'all' | 'selected'>('all')
+  const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set())
   
   const wsClientRef = useRef<WebSocketClient | null>(null)
   const streamingResponsesRef = useRef<Map<string, string>>(new Map())
+  const agentsRef = useRef<AgentInfo[]>([])
+  const sessionIdRef = useRef<string>("")
 
   useEffect(() => {
-    const wsUrl = (typeof window !== 'undefined' && (window as any).env?.NEXT_PUBLIC_WS_URL) || "ws://localhost:3001"
+    agentsRef.current = agents
+  }, [agents])
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const sid = params.get('session')
+    if (sid && !sessionIdRef.current) {
+      setSessionId(sid)
+    }
+  }, [])
+
+  useEffect(() => {
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001"
     const wsClient = new WebSocketClient(wsUrl)
     wsClientRef.current = wsClient
 
     wsClient.connect({
+      onOpen: () => {
+        wsClient.getAgents()
+      },
       onChunk: (chunk: string, agentId: string) => {
         const key = agentId
         const currentResponse = streamingResponsesRef.current.get(key) || ""
@@ -84,7 +108,7 @@ export default function MultiAgentAI() {
         })
       },
       onComplete: (response: string, agentId: string, conversationId: string) => {
-        const agent = agents.find(a => a.id === agentId)
+        const agent = agentsRef.current.find(a => a.id === agentId)
         if (agent) {
           setResponses(prev => {
             const updated = prev.map(r => 
@@ -113,7 +137,7 @@ export default function MultiAgentAI() {
         setIsProcessing(false)
       },
       onConversationId: (conversationId: string, newSessionId: string) => {
-        if (!sessionId) {
+        if (!sessionIdRef.current) {
           setSessionId(newSessionId)
         }
       },
@@ -122,7 +146,6 @@ export default function MultiAgentAI() {
       }
     }).then(() => {
       setIsConnected(true)
-      wsClient.getAgents()
     }).catch(console.error)
 
     return () => {
@@ -160,7 +183,16 @@ export default function MultiAgentAI() {
     setBestResponse(null)
     streamingResponsesRef.current.clear()
 
-    agents.forEach(agent => {
+    const targetAgents = askMode === 'all'
+      ? agents
+      : agents.filter(a => selectedAgentIds.has(a.id))
+
+    if (targetAgents.length === 0) {
+      setIsProcessing(false)
+      return
+    }
+
+    targetAgents.forEach(agent => {
       setResponses(prev => [...prev, {
         agent: agent.name,
         agentId: agent.id,
@@ -267,6 +299,28 @@ export default function MultiAgentAI() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <Button
+                  variant={askMode === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setAskMode('all')}
+                >
+                  Ask All
+                </Button>
+                <Button
+                  variant={askMode === 'selected' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setAskMode('selected')}
+                >
+                  Ask Selected
+                </Button>
+                {askMode === 'selected' && (
+                  <Badge variant="secondary">
+                    Selected: {selectedAgentIds.size}
+                  </Badge>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {agents.map((agent) => (
                   <Card
@@ -282,6 +336,28 @@ export default function MultiAgentAI() {
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground">{agent.specialization}</div>
+
+                    {askMode === 'selected' && (
+                      <div className="mt-3">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedAgentIds.has(agent.id)}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setSelectedAgentIds(prev => {
+                                const next = new Set(prev)
+                                if (checked) next.add(agent.id)
+                                else next.delete(agent.id)
+                                return next
+                              })
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          Include
+                        </label>
+                      </div>
+                    )}
                   </Card>
                 ))}
               </div>

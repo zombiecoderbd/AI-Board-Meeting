@@ -8,6 +8,7 @@ interface WSMessage {
 }
 
 interface WebSocketClientOptions {
+  onOpen?: () => void;
   onChunk?: (chunk: string, agentId: string) => void;
   onComplete?: (response: string, agentId: string, conversationId: string) => void;
   onError?: (error: string) => void;
@@ -39,6 +40,9 @@ class WebSocketClient {
           console.log('WebSocket connected');
           this.isConnected = true;
           this.reconnectAttempts = 0;
+          if (this.options.onOpen) {
+            this.options.onOpen();
+          }
           resolve();
         };
 

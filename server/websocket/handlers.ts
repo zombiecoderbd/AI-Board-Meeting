@@ -27,6 +27,22 @@ const conversationContexts = new Map<string, ConversationContext>();
 // Cache for default model config
 let cachedDefaultModelConfig: ModelConfig | null = null;
 
+const normalizeModelConfig = (config: ModelConfig | null): ModelConfig | null => {
+  if (!config) return null;
+
+  if (config.provider === 'gemini') {
+    return {
+      ...config,
+      apiKey: config.apiKey || process.env.GEMINI_API_KEY,
+    };
+  }
+
+  return {
+    ...config,
+    baseUrl: config.baseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+  };
+};
+
 const loadDefaultModelConfig = async (): Promise<ModelConfig | null> => {
   if (cachedDefaultModelConfig) {
     return cachedDefaultModelConfig;
@@ -130,6 +146,8 @@ const handleQuestion = async (ws: WebSocket, data: WSMessage) => {
   if (!modelConfig) {
     modelConfig = await loadDefaultModelConfig();
   }
+
+  modelConfig = normalizeModelConfig(modelConfig);
   
   // Store conversation context
   const context: ConversationContext = {
