@@ -42,6 +42,7 @@ export default function ModelConfig() {
   const [search, setSearch] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savedConfigLoaded, setSavedConfigLoaded] = useState(false)
 
   const combinedModels = useMemo(() => {
     const ollamaModels = (ollamaData?.models || []).map(m => ({
@@ -75,6 +76,8 @@ export default function ModelConfig() {
       }
     } catch (error) {
       console.error('Error loading saved config:', error)
+    } finally {
+      setSavedConfigLoaded(true)
     }
   }
 
@@ -87,13 +90,15 @@ export default function ModelConfig() {
         setOllamaData(data.ollama)
         setGeminiData(data.gemini)
 
-        if (!selectedModel) {
+        if (!savedConfigLoaded && !selectedModel) {
           const fallback =
             data.ollama?.models?.[0]?.id ||
             data.gemini?.models?.[0]?.id ||
             ''
-          setSelectedModel(fallback)
-          setSelectedProvider(data.ollama?.models?.[0]?.id ? 'ollama' : 'gemini')
+          if (fallback) {
+            setSelectedModel(fallback)
+            setSelectedProvider(data.ollama?.models?.[0]?.id ? 'ollama' : 'gemini')
+          }
         }
       }
     } catch (error) {

@@ -56,12 +56,19 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const permanentQuery = searchParams.get('permanent');
 
     const { updateSessionStatus } = await import('@/server/db/database');
+    const { deleteSessionPermanently, deleteSessionsPermanently } = await import('@/server/db/database');
 
     if (id) {
-      updateSessionStatus(id, 'archived');
-      return NextResponse.json({ success: true });
+      const permanent = permanentQuery === 'true';
+      if (permanent) {
+        deleteSessionPermanently(id);
+      } else {
+        updateSessionStatus(id, 'archived');
+      }
+      return NextResponse.json({ success: true, permanent });
     }
 
     let body: any = null;
@@ -72,12 +79,18 @@ export async function DELETE(request: NextRequest) {
     }
 
     const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];
+    const permanent: boolean = body?.permanent === true;
     if (ids.length === 0) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 });
     }
 
+    if (permanent) {
+      deleteSessionsPermanently(ids);
+      return NextResponse.json({ success: true, deleted: ids.length, permanent: true });
+    }
+
     ids.forEach((sessionId) => updateSessionStatus(sessionId, 'archived'));
-    return NextResponse.json({ success: true, archived: ids.length });
+    return NextResponse.json({ success: true, archived: ids.length, permanent: false });
   } catch (error) {
     console.error('Error deleting session:', error);
     return NextResponse.json({ error: 'Failed to delete session' }, { status: 500 });

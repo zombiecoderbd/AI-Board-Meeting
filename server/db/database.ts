@@ -138,6 +138,36 @@ const updateSessionStatus = (id: string, status: string) => {
   stmt.run(status, id);
 };
 
+const deleteSessionPermanently = (sessionId: string) => {
+  const deleteMessagesBySession = db.prepare(`
+    DELETE FROM messages
+    WHERE conversation_id IN (
+      SELECT id FROM conversations WHERE session_id = ?
+    )
+  `);
+  const deleteConversationsBySession = db.prepare('DELETE FROM conversations WHERE session_id = ?');
+  const deleteSessionStmt = db.prepare('DELETE FROM sessions WHERE id = ?');
+
+  const tx = db.transaction((id: string) => {
+    deleteMessagesBySession.run(id);
+    deleteConversationsBySession.run(id);
+    deleteSessionStmt.run(id);
+  });
+
+  tx(sessionId);
+};
+
+const deleteSessionsPermanently = (sessionIds: string[]) => {
+  const unique = Array.from(new Set(sessionIds)).filter(Boolean);
+  if (unique.length === 0) return;
+
+  const tx = db.transaction((ids: string[]) => {
+    ids.forEach((id) => deleteSessionPermanently(id));
+  });
+
+  tx(unique);
+};
+
 // Conversation operations
 const createConversation = (data: {
   id: string;
@@ -285,6 +315,8 @@ export {
   getAllSessions,
   updateSessionStatus,
   updateSessionModelConfig,
+  deleteSessionPermanently,
+  deleteSessionsPermanently,
   createConversation,
   getConversationsBySession,
   getConversationById,

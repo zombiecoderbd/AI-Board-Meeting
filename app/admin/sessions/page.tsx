@@ -40,6 +40,44 @@ export default function SessionsPage() {
     }
   }
 
+  const bulkArchiveSessions = async () => {
+    const ids = Array.from(selectedSessionIds)
+    if (ids.length === 0) return
+    if (!confirm(`Archive ${ids.length} selected sessions?`)) return
+
+    try {
+      await fetch("/api/admin/sessions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      })
+
+      setSessions(prev => prev.filter(s => !selectedSessionIds.has(s.id)))
+      setSelectedSessionIds(new Set())
+    } catch (error) {
+      console.error("Error bulk archiving sessions:", error)
+    }
+  }
+
+  const bulkDeleteSessions = async () => {
+    const ids = Array.from(selectedSessionIds)
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} selected sessions?`)) return
+
+    try {
+      await fetch("/api/admin/sessions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, permanent: true }),
+      })
+
+      setSessions(prev => prev.filter(s => !selectedSessionIds.has(s.id)))
+      setSelectedSessionIds(new Set())
+    } catch (error) {
+      console.error("Error bulk deleting sessions:", error)
+    }
+  }
+
   useEffect(() => {
     fetchSessions()
   }, [])
@@ -59,25 +97,6 @@ export default function SessionsPage() {
       return
     }
     setSelectedSessionIds(new Set(sessions.map(s => s.id)))
-  }
-
-  const bulkArchiveSessions = async () => {
-    const ids = Array.from(selectedSessionIds)
-    if (ids.length === 0) return
-    if (!confirm(`Archive ${ids.length} selected sessions?`)) return
-
-    try {
-      await fetch("/api/admin/sessions", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      })
-
-      setSessions(prev => prev.filter(s => !selectedSessionIds.has(s.id)))
-      setSelectedSessionIds(new Set())
-    } catch (error) {
-      console.error("Error bulk archiving sessions:", error)
-    }
   }
 
   const createNewSession = async () => {
@@ -102,7 +121,7 @@ export default function SessionsPage() {
     if (!confirm("Are you sure you want to delete this session?")) return
 
     try {
-      await fetch(`/api/admin/sessions?id=${sessionId}`, { method: "DELETE" })
+      await fetch(`/api/admin/sessions?id=${sessionId}&permanent=true`, { method: "DELETE" })
       setSessions(prev => prev.filter(s => s.id !== sessionId))
       setSelectedSessionIds(prev => {
         const next = new Set(prev)
@@ -148,14 +167,24 @@ export default function SessionsPage() {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span>All Sessions</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={bulkArchiveSessions}
-              disabled={selectedSessionIds.size === 0}
-            >
-              Archive Selected ({selectedSessionIds.size})
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={bulkArchiveSessions}
+                disabled={selectedSessionIds.size === 0}
+              >
+                Archive Selected ({selectedSessionIds.size})
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={bulkDeleteSessions}
+                disabled={selectedSessionIds.size === 0}
+              >
+                Delete Selected ({selectedSessionIds.size})
+              </Button>
+            </div>
           </CardTitle>
           <CardDescription>Bulk-select and archive sessions</CardDescription>
         </CardHeader>
